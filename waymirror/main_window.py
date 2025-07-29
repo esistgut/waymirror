@@ -72,6 +72,18 @@ class MainWindow(QMainWindow):
         self.start_button.clicked.connect(self.toggle_capture)
         
         control_layout.addWidget(self.start_button)
+        
+        # Aspect ratio selector
+        aspect_label = QLabel("Aspect Ratio:")
+        control_layout.addWidget(aspect_label)
+        
+        self.aspect_ratio_combo = QComboBox()
+        self.aspect_ratio_combo.addItem("Respect Source", "source")
+        self.aspect_ratio_combo.addItem("Adapt to Window", "window")
+        self.aspect_ratio_combo.setCurrentIndex(0)  # Default to "Respect Source"
+        self.aspect_ratio_combo.currentTextChanged.connect(self.on_aspect_ratio_changed)
+        control_layout.addWidget(self.aspect_ratio_combo)
+        
         control_layout.addStretch()
         
         layout.addLayout(control_layout)
@@ -114,6 +126,18 @@ class MainWindow(QMainWindow):
             self.start_capture()
         else:
             self.stop_capture()
+    
+    def on_aspect_ratio_changed(self, text):
+        """Handle aspect ratio selection change"""
+        if self.video_widget:
+            aspect_mode = self.aspect_ratio_combo.currentData()
+            if aspect_mode == "source":
+                self.video_widget.set_aspect_ratio_mode("source")
+                self.info_label.setText("Aspect ratio: Respecting source dimensions")
+            elif aspect_mode == "window":
+                self.video_widget.set_aspect_ratio_mode("window") 
+                self.info_label.setText("Aspect ratio: Adapted to window")
+            logger.info(f"Aspect ratio mode changed to: {aspect_mode}")
     
     def start_capture(self):
         """Start screen capture"""

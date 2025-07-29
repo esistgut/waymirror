@@ -3,7 +3,7 @@ Video display widget using Qt
 """
 
 from PyQt6.QtWidgets import QLabel, QSizePolicy
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QPixmap, QImage
 import gi
 gi.require_version('Gst', '1.0')
@@ -28,6 +28,12 @@ class VideoWidget(QLabel):
         # Video properties
         self.frame_width = 0
         self.frame_height = 0
+        
+        # Aspect ratio mode: "source" or "window"
+        self.aspect_ratio_mode = "source"
+        
+        # Apply initial scaling behavior
+        self._update_scaling_behavior()
         
     def update_frame(self, sample: Gst.Sample):
         """Update the widget with a new video frame"""
@@ -69,7 +75,9 @@ class VideoWidget(QLabel):
                     
                     # Convert to QPixmap and display
                     pixmap = QPixmap.fromImage(qimage)
-                    self.setPixmap(pixmap)
+                    
+                    # Apply aspect ratio scaling
+                    self._apply_aspect_ratio_to_pixmap(pixmap)
                     
                     # Emit signal
                     self.frameReceived.emit()
@@ -83,3 +91,39 @@ class VideoWidget(QLabel):
     def get_frame_size(self) -> tuple[int, int]:
         """Get the current frame dimensions"""
         return (self.frame_width, self.frame_height)
+    
+    def set_aspect_ratio_mode(self, mode: str):
+        """Set aspect ratio mode: 'source' or 'window'"""
+        if mode in ["source", "window"]:
+            self.aspect_ratio_mode = mode
+            self._update_scaling_behavior()
+            # If we have a current pixmap, reapply the scaling
+            if hasattr(self, 'pixmap') and self.pixmap() and not self.pixmap().isNull():
+                current_pixmap = self.pixmap()
+                self._apply_aspect_ratio_to_pixmap(current_pixmap)
+    
+    def _apply_aspect_ratio_to_pixmap(self, pixmap):
+        """Apply the current aspect ratio mode to a pixmap"""
+        if self.aspect_ratio_mode == "source":
+            # Scale pixmap to maintain aspect ratio within widget bounds
+            widget_size = self.size()
+            scaled_pixmap = pixmap.scaled(
+                widget_size, 
+                Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.setPixmap(scaled_pixmap)
+        else:
+            # Use original pixmap - setScaledContents will handle stretching
+            self.setPixmap(pixmap)
+    
+    def _update_scaling_behavior(self):
+        """Update the scaling behavior based on aspect ratio mode"""
+        if self.aspect_ratio_mode == "source":
+            # Respect source aspect ratio - don't scale to fill completely
+            self.setScaledContents(False)
+            # Use alignment to center the content
+            self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        else:  # window mode
+            # Adapt to window - scale to fill the widget
+            self.setScaledContents(True)
