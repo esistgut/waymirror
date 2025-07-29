@@ -1,0 +1,4 @@
+PyQt6
+PyGObject
+dbus-python
+numpy
