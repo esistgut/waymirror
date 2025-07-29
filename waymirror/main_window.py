@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
             self.start_button.setText("Start Capture")
             self.start_button.setEnabled(True)
             self.video_widget.setText("No video feed")
-            self.video_widget.setPixmap(None)
+            self.video_widget.clear()  # Clear the pixmap properly
             self.info_label.setText("Capture stopped")
             self.status_bar.showMessage("Ready")
             

@@ -35,6 +35,8 @@ class PortalHandler:
         
         self.session_handle = None
         self.stream_node_id = None
+        self._signal_matches = []  # Track signal handlers for cleanup
+        self._start_called = False  # Track if Start has been called to prevent duplicates
         
         # Callbacks
         self.on_stream_ready: Optional[Callable[[int], None]] = None
@@ -66,12 +68,13 @@ class PortalHandler:
             
             # Connect to response using the actual path returned by Portal
             if isinstance(response, str):
-                self.bus.add_signal_receiver(
+                match = self.bus.add_signal_receiver(
                     self._on_create_session_response,
                     signal_name='Response',
                     dbus_interface='org.freedesktop.portal.Request',
                     path=response
                 )
+                self._signal_matches.append(match)
             else:
                 logger.error(f"Unexpected response type: {type(response)}")
                 if self.on_error:
@@ -112,8 +115,6 @@ class PortalHandler:
             
         except Exception as e:
             logger.error(f"Error in create session response: {str(e)}")
-            import traceback
-            traceback.print_exc()
             if self.on_error:
                 self.on_error(f"Error in create session response: {str(e)}")
     
@@ -124,16 +125,16 @@ class PortalHandler:
             import time
             token = f"waymirror{int(time.time() * 1000)}"
             
-            # Select sources options - allow multiple and show dialog
+            # Select sources options - try with different settings
             select_options = {
                 'handle_token': dbus.String(token),
-                'types': dbus.UInt32(1),  # Monitor = 1, Window = 2
-                'multiple': dbus.Boolean(True),  # Allow multiple selection
+                'types': dbus.UInt32(1),  # Monitor = 1
+                'multiple': dbus.Boolean(False),  # Single selection might work better
                 'cursor_mode': dbus.UInt32(2),  # Embedded cursor = 2
-                'persist_mode': dbus.UInt32(2)  # Transient = 2, Persistent = 1
             }
             
             logger.info("Selecting capture sources...")
+            logger.info(f"SelectSources options: {select_options}")
             response = self.screencast_iface.SelectSources(
                 self.session_handle,
                 select_options
@@ -141,12 +142,14 @@ class PortalHandler:
             
             # Connect to response signal using the actual path returned
             if isinstance(response, str):
-                self.bus.add_signal_receiver(
+                logger.info(f"SelectSources request path: {response}")
+                match = self.bus.add_signal_receiver(
                     self._on_select_sources_response,
                     signal_name='Response',
                     dbus_interface='org.freedesktop.portal.Request',
                     path=response
                 )
+                self._signal_matches.append(match)
             else:
                 logger.error(f"SelectSources unexpected response type: {type(response)}")
                 if self.on_error:
@@ -167,37 +170,50 @@ class PortalHandler:
                 self.on_error("User cancelled source selection or error occurred")
             return
         
+        # Check if we have streams in the results - only proceed if we do
+        streams = results.get('streams', [])
+        if not streams:
+            logger.info("No streams in SelectSources response - trying to call Start anyway...")
+            # Sometimes the streams are provided in the Start response instead
+            # Let's try calling Start even without streams in SelectSources
+        else:
+            logger.info(f"User selected {len(streams)} stream(s), proceeding to start...")
+        
+        # Prevent duplicate Start calls
+        if self._start_called:
+            logger.info("Start already called, ignoring duplicate SelectSources response")
+            return
+        
         try:
+            # Mark that we're calling Start to prevent duplicates
+            self._start_called = True
+            
             # Get a unique token for the request
             import time
             token = f"waymirror{int(time.time() * 1000)}"
             
-            logger.info(f"Start using token: {token}")
-            
-            # Start options - proper D-Bus signature osa{sv}
+            # Start options
             start_options = {
                 'handle_token': dbus.String(token)
             }
             
             logger.info("Calling Start...")
             response = self.screencast_iface.Start(
-                self.session_handle,  # Already an ObjectPath
+                self.session_handle,
                 "",  # parent_window - empty string
                 start_options
             )
-            logger.info(f"Start immediate response: {response}")
             
             # Connect to response signal using the actual path returned
             if isinstance(response, str):
-                actual_request_path = response
-                logger.info(f"Start actual request path: {actual_request_path}")
-                
-                self.bus.add_signal_receiver(
+                logger.info(f"Start request path: {response}")
+                match = self.bus.add_signal_receiver(
                     self._on_start_response,
                     signal_name='Response',
                     dbus_interface='org.freedesktop.portal.Request',
-                    path=actual_request_path
+                    path=response
                 )
+                self._signal_matches.append(match)
             else:
                 logger.error(f"Start unexpected response type: {type(response)}")
                 if self.on_error:
@@ -205,8 +221,9 @@ class PortalHandler:
             
         except Exception as e:
             logger.error(f"Error in select sources response: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            self._start_called = False  # Reset flag on error
+            if self.on_error:
+                self.on_error(f"Error in select sources response: {str(e)}")
             if self.on_error:
                 self.on_error(f"Error in select sources response: {str(e)}")
     
@@ -246,14 +263,19 @@ class PortalHandler:
     
     def stop_capture(self):
         """Stop the current capture session"""
-        if self.session_handle:
-            try:
-                # The session will be automatically cleaned up
-                self.session_handle = None
-                self.stream_node_id = None
-            except Exception as e:
-                if self.on_error:
-                    self.on_error(f"Error stopping capture: {str(e)}")
+        try:
+            # Clean up signal handlers
+            for match in self._signal_matches:
+                match.remove()
+            self._signal_matches.clear()
+            
+            # Reset state
+            self.session_handle = None
+            self.stream_node_id = None
+            self._start_called = False
+        except Exception as e:
+            if self.on_error:
+                self.on_error(f"Error stopping capture: {str(e)}")
     
     def get_stream_node_id(self) -> Optional[int]:
         """Get the PipeWire stream node ID"""
