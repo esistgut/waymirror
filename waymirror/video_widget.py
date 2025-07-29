@@ -2,7 +2,8 @@
 Video display widget using Qt
 """
 
-from PyQt6.QtWidgets import QLabel, QSizePolicy
+from typing import Optional, Tuple
+from PyQt6.QtWidgets import QLabel, QSizePolicy, QWidget
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QPixmap, QImage
 import gi
@@ -15,7 +16,7 @@ class VideoWidget(QLabel):
     
     frameReceived = pyqtSignal()
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         
         # Widget setup
@@ -26,16 +27,16 @@ class VideoWidget(QLabel):
         self.setText("No video feed")
         
         # Video properties
-        self.frame_width = 0
-        self.frame_height = 0
+        self.frame_width: int = 0
+        self.frame_height: int = 0
         
         # Aspect ratio mode: "source" or "window"
-        self.aspect_ratio_mode = "source"
+        self.aspect_ratio_mode: str = "source"
         
         # Apply initial scaling behavior
         self._update_scaling_behavior()
         
-    def update_frame(self, sample: Gst.Sample):
+    def update_frame(self, sample: Gst.Sample) -> None:
         """Update the widget with a new video frame"""
         try:
             # Get buffer from sample
@@ -88,11 +89,11 @@ class VideoWidget(QLabel):
         except Exception as e:
             print(f"Error updating frame: {e}")
     
-    def get_frame_size(self) -> tuple[int, int]:
+    def get_frame_size(self) -> Tuple[int, int]:
         """Get the current frame dimensions"""
         return (self.frame_width, self.frame_height)
     
-    def set_aspect_ratio_mode(self, mode: str):
+    def set_aspect_ratio_mode(self, mode: str) -> None:
         """Set aspect ratio mode: 'source' or 'window'"""
         if mode in ["source", "window"]:
             self.aspect_ratio_mode = mode
@@ -102,7 +103,7 @@ class VideoWidget(QLabel):
                 current_pixmap = self.pixmap()
                 self._apply_aspect_ratio_to_pixmap(current_pixmap)
     
-    def _apply_aspect_ratio_to_pixmap(self, pixmap):
+    def _apply_aspect_ratio_to_pixmap(self, pixmap: QPixmap) -> None:
         """Apply the current aspect ratio mode to a pixmap"""
         if self.aspect_ratio_mode == "source":
             # Scale pixmap to maintain aspect ratio within widget bounds
@@ -117,7 +118,7 @@ class VideoWidget(QLabel):
             # Use original pixmap - setScaledContents will handle stretching
             self.setPixmap(pixmap)
     
-    def _update_scaling_behavior(self):
+    def _update_scaling_behavior(self) -> None:
         """Update the scaling behavior based on aspect ratio mode"""
         if self.aspect_ratio_mode == "source":
             # Respect source aspect ratio - don't scale to fill completely

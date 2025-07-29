@@ -6,7 +6,8 @@ import gi
 gi.require_version('Gst', '1.0')
 gi.require_version('GstVideo', '1.0')
 from gi.repository import Gst, GstVideo, GObject
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple
+import logging
 
 # Initialize GStreamer
 Gst.init(None)
@@ -14,7 +15,7 @@ Gst.init(None)
 class GStreamerPipeline:
     """Manages GStreamer pipeline for PipeWire video streams"""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.pipeline: Optional[Gst.Pipeline] = None
         self.bus: Optional[Gst.Bus] = None
         self.sink: Optional[Gst.Element] = None
@@ -91,7 +92,7 @@ class GStreamerPipeline:
                 self.on_error(f"Error starting pipeline: {str(e)}")
             return False
     
-    def stop(self):
+    def stop(self) -> None:
         """Stop the pipeline"""
         if self.pipeline:
             try:
@@ -112,7 +113,7 @@ class GStreamerPipeline:
                 self.on_error(f"Error processing frame: {str(e)}")
             return Gst.FlowReturn.ERROR
     
-    def _on_bus_message(self, bus: Gst.Bus, message: Gst.Message):
+    def _on_bus_message(self, bus: Gst.Bus, message: Gst.Message) -> None:
         """Handle bus messages"""
         if message.type == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
@@ -122,7 +123,7 @@ class GStreamerPipeline:
             if self.on_error:
                 self.on_error("End of stream")
     
-    def get_frame_dimensions(self) -> tuple[int, int]:
+    def get_frame_dimensions(self) -> Tuple[int, int]:
         """Get current frame dimensions"""
         if not self.sink:
             return (0, 0)

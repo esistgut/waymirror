@@ -2,3 +2,7 @@ PyQt6
 PyGObject
 dbus-python
 numpy
+
+# Development dependencies
+mypy
+types-PyQt6

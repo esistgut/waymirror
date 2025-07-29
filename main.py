@@ -6,14 +6,15 @@ WayMirror - Screen capture application for Wayland using FreeDesktop Portal API
 import sys
 import signal
 import logging
+from typing import Any, NoReturn
 from PyQt6.QtWidgets import QApplication
 from waymirror.main_window import MainWindow
 
-def signal_handler(sig, frame):
+def signal_handler(sig: int, frame: Any) -> None:
     """Handle Ctrl+C gracefully"""
     QApplication.quit()
 
-def setup_logging():
+def setup_logging() -> None:
     """Setup logging configuration"""
     logging.basicConfig(
         level=logging.INFO,
@@ -23,7 +24,7 @@ def setup_logging():
         ]
     )
 
-def main():
+def main() -> NoReturn:
     setup_logging()
     
     app = QApplication(sys.argv)

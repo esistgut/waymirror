@@ -3,10 +3,11 @@ Main application window
 """
 
 import logging
+from typing import Optional
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QPushButton, QLabel, QStatusBar, QMessageBox, QComboBox)
 from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QCloseEvent
 import gi
 gi.require_version('GLib', '2.0')
 from gi.repository import GLib
@@ -20,16 +21,16 @@ logger = logging.getLogger(__name__)
 class CaptureThread(QThread):
     """Thread for handling the GLib main loop"""
     
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.main_loop = None
+        self.main_loop: Optional[GLib.MainLoop] = None
         
-    def run(self):
+    def run(self) -> None:
         """Run the GLib main loop"""
         self.main_loop = GLib.MainLoop()
         self.main_loop.run()
     
-    def stop(self):
+    def stop(self) -> None:
         """Stop the main loop"""
         if self.main_loop:
             self.main_loop.quit()
@@ -37,17 +38,24 @@ class CaptureThread(QThread):
 class MainWindow(QMainWindow):
     """Main application window"""
     
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         
         self.setWindowTitle("WayMirror - Screen Capture")
         self.setGeometry(100, 100, 1024, 768)
         
         # Components
-        self.portal_handler = None
-        self.gstreamer_pipeline = None
-        self.capture_thread = None
-        self.is_capturing = False
+        self.portal_handler: Optional[PortalHandler] = None
+        self.gstreamer_pipeline: Optional[GStreamerPipeline] = None
+        self.capture_thread: Optional[CaptureThread] = None
+        self.is_capturing: bool = False
+        
+        # UI Components (will be initialized in setup_ui)
+        self.start_button: QPushButton
+        self.aspect_ratio_combo: QComboBox
+        self.video_widget: VideoWidget
+        self.status_bar: QStatusBar
+        self.info_label: QLabel
         
         self.setup_ui()
         self.setup_menu()
@@ -56,7 +64,7 @@ class MainWindow(QMainWindow):
         self.capture_thread = CaptureThread()
         self.capture_thread.start()
         
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         """Set up the user interface"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -101,12 +109,14 @@ class MainWindow(QMainWindow):
         self.info_label = QLabel("Click 'Start Capture' to begin screen capture")
         layout.addWidget(self.info_label)
     
-    def setup_menu(self):
+    def setup_menu(self) -> None:
         """Set up the menu bar"""
         menubar = self.menuBar()
+        assert menubar is not None
         
         # File menu
         file_menu = menubar.addMenu("File")
+        assert file_menu is not None
         
         quit_action = QAction("Quit", self)
         quit_action.setShortcut("Ctrl+Q")
@@ -115,19 +125,20 @@ class MainWindow(QMainWindow):
         
         # Help menu
         help_menu = menubar.addMenu("Help")
+        assert help_menu is not None
         
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
     
-    def toggle_capture(self):
+    def toggle_capture(self) -> None:
         """Toggle screen capture on/off"""
         if not self.is_capturing:
             self.start_capture()
         else:
             self.stop_capture()
     
-    def on_aspect_ratio_changed(self, text):
+    def on_aspect_ratio_changed(self, text: str) -> None:
         """Handle aspect ratio selection change"""
         if self.video_widget:
             aspect_mode = self.aspect_ratio_combo.currentData()
@@ -139,7 +150,7 @@ class MainWindow(QMainWindow):
                 self.info_label.setText("Aspect ratio: Adapted to window")
             logger.info(f"Aspect ratio mode changed to: {aspect_mode}")
     
-    def start_capture(self):
+    def start_capture(self) -> None:
         """Start screen capture"""
         try:
             logger.info("Starting screen capture...")
@@ -168,7 +179,7 @@ class MainWindow(QMainWindow):
             traceback.print_exc()
             self.on_portal_error(f"Error starting capture: {str(e)}")
     
-    def stop_capture(self):
+    def stop_capture(self) -> None:
         """Stop screen capture"""
         try:
             self.status_bar.showMessage("Stopping capture...")
@@ -194,7 +205,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.show_error(f"Error stopping capture: {str(e)}")
     
-    def on_stream_ready(self, node_id: int):
+    def on_stream_ready(self, node_id: int) -> None:
         """Handle when stream is ready from portal"""
         try:
             self.status_bar.showMessage("Stream ready, setting up pipeline...")
@@ -219,23 +230,23 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.on_gstreamer_error(f"Error setting up stream: {str(e)}")
     
-    def on_portal_error(self, error: str):
+    def on_portal_error(self, error: str) -> None:
         """Handle portal errors"""
         self.show_error(f"Portal error: {error}")
         self.start_button.setEnabled(True)
         self.status_bar.showMessage("Error")
         self.info_label.setText(f"Error: {error}")
     
-    def on_gstreamer_error(self, error: str):
+    def on_gstreamer_error(self, error: str) -> None:
         """Handle GStreamer errors"""
         self.show_error(f"GStreamer error: {error}")
         self.stop_capture()
     
-    def show_error(self, message: str):
+    def show_error(self, message: str) -> None:
         """Show error message"""
         QMessageBox.critical(self, "Error", message)
     
-    def show_about(self):
+    def show_about(self) -> None:
         """Show about dialog"""
         QMessageBox.about(
             self,
@@ -245,7 +256,7 @@ class MainWindow(QMainWindow):
             "for real-time screen capture on Wayland."
         )
     
-    def closeEvent(self, event):
+    def closeEvent(self, event: Optional[QCloseEvent]) -> None:
         """Handle window close event"""
         if self.is_capturing:
             self.stop_capture()
@@ -254,4 +265,5 @@ class MainWindow(QMainWindow):
             self.capture_thread.stop()
             self.capture_thread.wait(1000)  # Wait up to 1 second
         
-        event.accept()
+        if event:
+            event.accept()
