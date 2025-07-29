@@ -3,11 +3,9 @@ Portal API handler for screen capture using FreeDesktop Portal
 """
 
 import dbus
-import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 from typing import Dict, Any, Optional, Callable
-import os
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,28 +14,20 @@ class PortalHandler:
     """Handles communication with the FreeDesktop Portal API for screen capture"""
     
     def __init__(self):
-        logger.info("Initializing PortalHandler...")
-        
         # Initialize D-Bus main loop
-        logger.info("Setting up D-Bus main loop...")
         DBusGMainLoop(set_as_default=True)
         
         try:
-            logger.info("Connecting to session bus...")
             self.bus = dbus.SessionBus()
-            
-            logger.info("Getting portal object...")
             self.portal = self.bus.get_object(
                 'org.freedesktop.portal.Desktop',
                 '/org/freedesktop/portal/desktop'
             )
-            
-            logger.info("Getting screencast interface...")
             self.screencast_iface = dbus.Interface(
                 self.portal,
                 'org.freedesktop.portal.ScreenCast'
             )
-            logger.info("Portal initialization complete")
+            logger.info("Portal initialized successfully")
             
         except Exception as e:
             logger.error(f"Error initializing portal: {e}")
@@ -45,7 +35,6 @@ class PortalHandler:
         
         self.session_handle = None
         self.stream_node_id = None
-        self.pipewire_fd = None
         
         # Callbacks
         self.on_stream_ready: Optional[Callable[[int], None]] = None
@@ -66,31 +55,22 @@ class PortalHandler:
             import time
             token = f"waymirror{int(time.time() * 1000)}"
             
-            logger.info(f"Using token: {token}")
-            
-            # Create session options - handle_token should be wrapped in dbus.String
+            # Create session options
             options = {
                 'handle_token': dbus.String(token),
                 'session_handle_token': dbus.String(f"session{token}")
             }
             
-            # Create the session
-            logger.info("Calling CreateSession...")
+            logger.info("Creating Portal session...")
             response = self.screencast_iface.CreateSession(options)
-            logger.info(f"CreateSession immediate response: {response}")
             
-            # The response contains the actual request path we should listen to
+            # Connect to response using the actual path returned by Portal
             if isinstance(response, str):
-                actual_request_path = response
-                logger.info(f"Actual request path from Portal: {actual_request_path}")
-                
-                # Connect to CreateSession response using the actual path
-                logger.info("Connecting to CreateSession response signal...")
                 self.bus.add_signal_receiver(
                     self._on_create_session_response,
                     signal_name='Response',
                     dbus_interface='org.freedesktop.portal.Request',
-                    path=actual_request_path
+                    path=response
                 )
             else:
                 logger.error(f"Unexpected response type: {type(response)}")
@@ -140,16 +120,11 @@ class PortalHandler:
     def _select_sources(self):
         """Select capture sources"""
         try:
-            logger.info("Selecting capture sources...")
-            
             # Get a unique token for the request
             import time
             token = f"waymirror{int(time.time() * 1000)}"
             
-            logger.info(f"SelectSources using token: {token}")
-            
-            # Select sources options - proper D-Bus signature oa{sv}
-            # Adding more options to ensure the dialog appears
+            # Select sources options - allow multiple and show dialog
             select_options = {
                 'handle_token': dbus.String(token),
                 'types': dbus.UInt32(1),  # Monitor = 1, Window = 2
@@ -158,24 +133,19 @@ class PortalHandler:
                 'persist_mode': dbus.UInt32(2)  # Transient = 2, Persistent = 1
             }
             
-            logger.info(f"Calling SelectSources with session: {self.session_handle}")
-            logger.info(f"SelectSources options: {select_options}")
+            logger.info("Selecting capture sources...")
             response = self.screencast_iface.SelectSources(
-                self.session_handle,  # Already an ObjectPath from the response
+                self.session_handle,
                 select_options
             )
-            logger.info(f"SelectSources immediate response: {response}")
             
             # Connect to response signal using the actual path returned
             if isinstance(response, str):
-                actual_request_path = response
-                logger.info(f"SelectSources actual request path: {actual_request_path}")
-                
                 self.bus.add_signal_receiver(
                     self._on_select_sources_response,
                     signal_name='Response',
                     dbus_interface='org.freedesktop.portal.Request',
-                    path=actual_request_path
+                    path=response
                 )
             else:
                 logger.error(f"SelectSources unexpected response type: {type(response)}")
@@ -184,8 +154,6 @@ class PortalHandler:
             
         except Exception as e:
             logger.error(f"Error selecting sources: {str(e)}")
-            import traceback
-            traceback.print_exc()
             if self.on_error:
                 self.on_error(f"Error selecting sources: {str(e)}")
     
@@ -244,7 +212,10 @@ class PortalHandler:
     
     def _on_start_response(self, response: int, results: Dict[str, Any]):
         """Handle Start response"""
+        logger.info(f"Start response received: response={response}, results={results}")
+        
         if response != 0:
+            logger.error(f"Start failed with response code: {response}")
             if self.on_error:
                 self.on_error("Failed to start screen cast")
             return
@@ -253,6 +224,7 @@ class PortalHandler:
             # Extract stream information
             streams = results.get('streams', [])
             if not streams:
+                logger.error("No streams available in Start response")
                 if self.on_error:
                     self.on_error("No streams available")
                 return
@@ -261,16 +233,14 @@ class PortalHandler:
             stream = streams[0]
             self.stream_node_id = stream[0]  # PipeWire node ID
             
-            # Get the PipeWire file descriptor
-            fd_list = results.get('streams', [])
-            if fd_list:
-                self.pipewire_fd = fd_list[0]
+            logger.info(f"Stream ready! PipeWire node ID: {self.stream_node_id}")
             
             # Notify that stream is ready
             if self.on_stream_ready:
                 self.on_stream_ready(self.stream_node_id)
                 
         except Exception as e:
+            logger.error(f"Error in start response: {str(e)}")
             if self.on_error:
                 self.on_error(f"Error in start response: {str(e)}")
     
@@ -278,12 +248,9 @@ class PortalHandler:
         """Stop the current capture session"""
         if self.session_handle:
             try:
-                # Close session if it exists
-                # Note: The portal API doesn't always have a direct close method
                 # The session will be automatically cleaned up
                 self.session_handle = None
                 self.stream_node_id = None
-                self.pipewire_fd = None
             except Exception as e:
                 if self.on_error:
                     self.on_error(f"Error stopping capture: {str(e)}")

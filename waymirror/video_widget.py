@@ -3,7 +3,7 @@ Video display widget using Qt
 """
 
 from PyQt6.QtWidgets import QLabel, QSizePolicy
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage
 import gi
 gi.require_version('Gst', '1.0')

@@ -5,7 +5,7 @@ Main application window
 import logging
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QPushButton, QLabel, QStatusBar, QMessageBox, QComboBox)
-from PyQt6.QtCore import QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QAction
 import gi
 gi.require_version('GLib', '2.0')
@@ -40,8 +40,6 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        logger.info("Initializing MainWindow...")
-        
         self.setWindowTitle("WayMirror - Screen Capture")
         self.setGeometry(100, 100, 1024, 768)
         
@@ -51,16 +49,12 @@ class MainWindow(QMainWindow):
         self.capture_thread = None
         self.is_capturing = False
         
-        logger.info("Setting up UI...")
         self.setup_ui()
-        logger.info("Setting up menu...")
         self.setup_menu()
         
         # Start the capture thread for GLib main loop
-        logger.info("Starting capture thread...")
         self.capture_thread = CaptureThread()
         self.capture_thread.start()
-        logger.info("MainWindow initialization complete")
         
     def setup_ui(self):
         """Set up the user interface"""
@@ -73,22 +67,11 @@ class MainWindow(QMainWindow):
         # Control panel
         control_layout = QHBoxLayout()
         
-        # Monitor selection (placeholder for now)
-        self.monitor_combo = QComboBox()
-        self.monitor_combo.addItem("Primary Monitor")
-        self.monitor_combo.setEnabled(False)  # Will be enabled when we detect monitors
-        
         # Buttons
         self.start_button = QPushButton("Start Capture")
         self.start_button.clicked.connect(self.toggle_capture)
         
-        self.refresh_button = QPushButton("Refresh Monitors")
-        self.refresh_button.clicked.connect(self.refresh_monitors)
-        
-        control_layout.addWidget(QLabel("Monitor:"))
-        control_layout.addWidget(self.monitor_combo)
         control_layout.addWidget(self.start_button)
-        control_layout.addWidget(self.refresh_button)
         control_layout.addStretch()
         
         layout.addLayout(control_layout)
@@ -223,12 +206,6 @@ class MainWindow(QMainWindow):
         """Handle GStreamer errors"""
         self.show_error(f"GStreamer error: {error}")
         self.stop_capture()
-    
-    def refresh_monitors(self):
-        """Refresh monitor list (placeholder)"""
-        # This would query available monitors through the portal
-        # For now, just show a message
-        self.status_bar.showMessage("Monitor detection not yet implemented")
     
     def show_error(self, message: str):
         """Show error message"""

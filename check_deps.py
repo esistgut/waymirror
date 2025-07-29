@@ -12,6 +12,7 @@ def check_python_modules():
         ("PyQt6", "PyQt6.QtWidgets"),
         ("PyGObject", "gi"),
         ("D-Bus", "dbus"),
+        ("NumPy", "numpy"),
     ]
     
     missing = []
