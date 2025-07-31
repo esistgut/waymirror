@@ -5,7 +5,7 @@ Main application window
 import logging
 from typing import Optional
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                            QPushButton, QLabel, QStatusBar, QMessageBox, QComboBox)
+                            QPushButton, QLabel, QStatusBar, QMessageBox, QComboBox, QCheckBox, QSizePolicy)
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QAction, QCloseEvent
 import gi
@@ -52,10 +52,12 @@ class MainWindow(QMainWindow):
         
         # UI Components (will be initialized in setup_ui)
         self.start_button: QPushButton
+        self.preview_checkbox: QCheckBox
         self.aspect_ratio_combo: QComboBox
         self.video_widget: VideoWidget
         self.status_bar: QStatusBar
         self.info_label: QLabel
+        self.main_layout: QVBoxLayout  # Keep reference to main layout
         
         self.setup_ui()
         self.setup_menu()
@@ -71,6 +73,7 @@ class MainWindow(QMainWindow):
         
         # Main layout
         layout = QVBoxLayout(central_widget)
+        self.main_layout = layout  # Keep reference for later use
         
         # Control panel
         control_layout = QHBoxLayout()
@@ -80,6 +83,12 @@ class MainWindow(QMainWindow):
         self.start_button.clicked.connect(self.toggle_capture)
         
         control_layout.addWidget(self.start_button)
+        
+        # Preview checkbox
+        self.preview_checkbox = QCheckBox("Preview")
+        self.preview_checkbox.setChecked(True)  # Default to showing preview
+        self.preview_checkbox.toggled.connect(self.on_preview_toggled)
+        control_layout.addWidget(self.preview_checkbox)
         
         # Aspect ratio selector
         aspect_label = QLabel("Aspect Ratio:")
@@ -98,16 +107,26 @@ class MainWindow(QMainWindow):
         
         # Video display
         self.video_widget = VideoWidget()
+        self.video_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
         layout.addWidget(self.video_widget)
+        
+        # Info label
+        self.info_label = QLabel("Click 'Start Capture' to begin screen capture")
+        layout.addWidget(self.info_label)
         
         # Status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
         
-        # Info label
-        self.info_label = QLabel("Click 'Start Capture' to begin screen capture")
-        layout.addWidget(self.info_label)
+        # Initially show/hide video widget based on preview checkbox state
+        if not self.preview_checkbox.isChecked():
+            layout.removeWidget(self.video_widget)
+            self.video_widget.hide()
+            self.aspect_ratio_combo.setEnabled(False)
     
     def setup_menu(self) -> None:
         """Set up the menu bar"""
@@ -149,6 +168,41 @@ class MainWindow(QMainWindow):
                 self.video_widget.set_aspect_ratio_mode("window") 
                 self.info_label.setText("Aspect ratio: Adapted to window")
             logger.info(f"Aspect ratio mode changed to: {aspect_mode}")
+    
+    def on_preview_toggled(self, checked: bool) -> None:
+        """Handle preview checkbox toggle"""
+        if self.video_widget:
+            if checked:
+                # Add video widget back to layout at position 1 (after control layout, before info label)
+                self.main_layout.insertWidget(1, self.video_widget)
+                self.video_widget.show()
+                self.aspect_ratio_combo.setEnabled(True)
+                # Restore window to reasonable size for video display
+                self.resize(1024, 768)
+                if self.is_capturing:
+                    self.info_label.setText(f"Capturing with preview enabled")
+                else:
+                    self.info_label.setText("Click 'Start Capture' to begin screen capture")
+                logger.info("Preview enabled")
+            else:
+                # Remove video widget from layout
+                self.main_layout.removeWidget(self.video_widget)
+                self.video_widget.hide()
+                self.aspect_ratio_combo.setEnabled(False)
+                # Resize window to compact size when no preview
+                self.resize(400, 120)
+                if self.is_capturing:
+                    self.info_label.setText(f"Capturing (preview disabled)")
+                else:
+                    self.info_label.setText("Preview disabled - Click 'Start Capture' to begin screen capture")
+                logger.info("Preview disabled")
+        
+        # Update the frame callback to respect preview state
+        if self.gstreamer_pipeline:
+            if checked:
+                self.gstreamer_pipeline.on_frame_ready = self.video_widget.update_frame
+            else:
+                self.gstreamer_pipeline.on_frame_ready = None
     
     def start_capture(self) -> None:
         """Start screen capture"""
@@ -197,9 +251,22 @@ class MainWindow(QMainWindow):
             self.is_capturing = False
             self.start_button.setText("Start Capture")
             self.start_button.setEnabled(True)
-            self.video_widget.setText("No video feed")
-            self.video_widget.clear()  # Clear the pixmap properly
-            self.info_label.setText("Capture stopped")
+            
+            # Show the video widget and add it back to layout if preview is enabled
+            if self.preview_checkbox.isChecked():
+                if self.video_widget.parent() is None:
+                    self.main_layout.insertWidget(1, self.video_widget)
+                self.video_widget.show()
+                self.video_widget.setText("No video feed")
+                self.video_widget.clear()  # Clear the pixmap properly
+                self.info_label.setText("Capture stopped")
+            else:
+                # Keep it hidden and removed from layout
+                if self.video_widget.parent() is not None:
+                    self.main_layout.removeWidget(self.video_widget)
+                self.video_widget.hide()
+                self.info_label.setText("Capture stopped (preview disabled)")
+            
             self.status_bar.showMessage("Ready")
             
         except Exception as e:
@@ -212,7 +279,21 @@ class MainWindow(QMainWindow):
             
             # Create GStreamer pipeline
             self.gstreamer_pipeline = GStreamerPipeline()
-            self.gstreamer_pipeline.on_frame_ready = self.video_widget.update_frame
+            
+            # Set frame callback based on preview checkbox state
+            if self.preview_checkbox.isChecked():
+                self.gstreamer_pipeline.on_frame_ready = self.video_widget.update_frame
+                # Ensure video widget is in layout and visible
+                if self.video_widget.parent() is None:
+                    self.main_layout.insertWidget(1, self.video_widget)
+                self.video_widget.show()
+            else:
+                self.gstreamer_pipeline.on_frame_ready = None
+                # Ensure video widget is removed from layout
+                if self.video_widget.parent() is not None:
+                    self.main_layout.removeWidget(self.video_widget)
+                self.video_widget.hide()
+                
             self.gstreamer_pipeline.on_error = self.on_gstreamer_error
             
             if self.gstreamer_pipeline.create_pipeline(node_id):
@@ -220,7 +301,13 @@ class MainWindow(QMainWindow):
                     self.is_capturing = True
                     self.start_button.setText("Stop Capture")
                     self.start_button.setEnabled(True)
-                    self.info_label.setText(f"Capturing from PipeWire node: {node_id}")
+                    
+                    # Update info based on preview state
+                    if self.preview_checkbox.isChecked():
+                        self.info_label.setText(f"Capturing from PipeWire node: {node_id}")
+                    else:
+                        self.info_label.setText(f"Capturing from PipeWire node: {node_id} (preview disabled)")
+                        
                     self.status_bar.showMessage("Capturing...")
                 else:
                     self.on_gstreamer_error("Failed to start pipeline")
