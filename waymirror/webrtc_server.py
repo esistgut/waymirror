@@ -86,11 +86,11 @@ class WebRTCServer:
             self.runner = web.AppRunner(self.app)
             await self.runner.setup()
             
-            self.site = web.TCPSite(self.runner, 'localhost', self.port)
+            self.site = web.TCPSite(self.runner, '0.0.0.0', self.port)
             await self.site.start()
             
             self.is_running = True
-            logger.info(f"WebRTC server started on http://localhost:{self.port}")
+            logger.info(f"WebRTC server started on http://0.0.0.0:{self.port}")
             
             # Keep the server running
             while self.is_running:
@@ -367,7 +367,7 @@ class WebRTCServer:
             }
             
             connectWebSocket() {
-                const wsUrl = `ws://localhost:8000/ws`;
+                const wsUrl = `ws://${window.location.hostname}:8000/ws`;
                 this.ws = new WebSocket(wsUrl);
                 
                 this.ws.onopen = () => {
