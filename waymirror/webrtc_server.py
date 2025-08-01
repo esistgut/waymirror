@@ -447,36 +447,71 @@ class WebRTCServer:
     
     def stop_server(self) -> None:
         """Stop the WebRTC server"""
+        logger.info("WebRTC server stop_server() called")
+        
         try:
             self.is_running = False
             
-            # Close WebSocket connections
-            if self.loop:
-                for ws in self.websockets.values():
-                    asyncio.run_coroutine_threadsafe(ws.close(), self.loop)
-            
-            # Stop web server
-            if self.loop:
-                async def cleanup():
-                    if self.site:
-                        await self.site.stop()
-                    if self.runner:
-                        await self.runner.cleanup()
+            if self.loop and not self.loop.is_closed():
+                # Schedule cleanup in the event loop
+                future = asyncio.run_coroutine_threadsafe(self._cleanup_server(), self.loop)
                 
-                asyncio.run_coroutine_threadsafe(cleanup(), self.loop)
-            
-            # Stop the event loop
-            if self.loop:
-                self.loop.call_soon_threadsafe(self.loop.stop)
+                # Wait for cleanup to complete
+                try:
+                    future.result(timeout=5)
+                except Exception as e:
+                    logger.error(f"Error during server cleanup: {e}")
             
             # Wait for thread to finish
             if self.thread and self.thread.is_alive():
-                self.thread.join(timeout=2)
+                logger.info("Waiting for server thread to finish...")
+                self.thread.join(timeout=5)
+                if self.thread.is_alive():
+                    logger.warning("Server thread did not finish gracefully")
             
-            logger.info("WebRTC server stopped")
+            # Reset state
+            self.loop = None
+            self.thread = None
+            self.app = None
+            self.runner = None
+            self.site = None
+            self.websockets.clear()
+            
+            logger.info("WebRTC server stopped successfully")
             
         except Exception as e:
             logger.error(f"Error stopping WebRTC server: {e}")
+    
+    async def _cleanup_server(self) -> None:
+        """Cleanup server resources"""
+        try:
+            logger.info("Starting server cleanup...")
+            
+            # Close WebSocket connections
+            for peer_id, ws in list(self.websockets.items()):
+                try:
+                    if not ws.closed:
+                        await ws.close()
+                        logger.info(f"Closed WebSocket for peer {peer_id}")
+                except Exception as e:
+                    logger.error(f"Error closing WebSocket for peer {peer_id}: {e}")
+            
+            # Stop web server
+            if self.site:
+                await self.site.stop()
+                logger.info("Web site stopped")
+            
+            if self.runner:
+                await self.runner.cleanup()
+                logger.info("Web runner cleaned up")
+            
+            # Stop the event loop after a short delay
+            self.loop.call_later(0.1, self.loop.stop)
+            
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+            # Force stop the loop if cleanup fails
+            self.loop.stop()
     
     def is_server_running(self) -> bool:
         """Check if the server is running"""

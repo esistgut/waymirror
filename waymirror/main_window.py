@@ -229,6 +229,8 @@ class MainWindow(QMainWindow):
     
     def on_webrtc_toggled(self, checked: bool) -> None:
         """Handle WebRTC streaming checkbox toggle"""
+        logger.info(f"WebRTC checkbox toggled: {checked}")
+        
         if not WEBRTC_AVAILABLE:
             self.webrtc_checkbox.setChecked(False)
             self.show_error("WebRTC streaming requires aiohttp and aiohttp-cors packages.\nPlease install them with: pip install aiohttp aiohttp-cors")
@@ -242,6 +244,7 @@ class MainWindow(QMainWindow):
         
         if checked:
             # Start WebRTC streaming
+            logger.info("Starting WebRTC streaming...")
             if self.portal_handler and hasattr(self.portal_handler, 'node_id') and self.portal_handler.node_id:
                 if self.start_webrtc_streaming(self.portal_handler.node_id):
                     self.is_webrtc_streaming = True
@@ -255,6 +258,7 @@ class MainWindow(QMainWindow):
                 self.show_error("No active capture stream for WebRTC")
         else:
             # Stop WebRTC streaming
+            logger.info("Stopping WebRTC streaming...")
             self.stop_webrtc_streaming()
             self.is_webrtc_streaming = False
             # Remove WebRTC info from label
@@ -425,12 +429,18 @@ class MainWindow(QMainWindow):
     def stop_webrtc_streaming(self) -> None:
         """Stop WebRTC streaming server"""
         try:
+            logger.info(f"stop_webrtc_streaming called, webrtc_server: {self.webrtc_server}")
             if self.webrtc_server:
+                logger.info("Calling webrtc_server.stop_server()")
                 self.webrtc_server.stop_server()
                 self.webrtc_server = None
-                logger.info("WebRTC server stopped")
+                logger.info("WebRTC server stopped and set to None")
+            else:
+                logger.info("No WebRTC server to stop")
         except Exception as e:
             logger.error(f"Error stopping WebRTC streaming: {e}")
+            import traceback
+            traceback.print_exc()
     
     def show_error(self, message: str) -> None:
         """Show error message"""
