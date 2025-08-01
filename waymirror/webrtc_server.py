@@ -273,6 +273,17 @@ class WebRTCServer:
             background-color: #6c757d;
             cursor: not-allowed;
         }
+        #fullscreenBtn {
+            background-color: #28a745;
+            color: white;
+        }
+        #fullscreenBtn:hover {
+            background-color: #218838;
+        }
+        #fullscreenBtn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -281,6 +292,7 @@ class WebRTCServer:
     <div id="status" class="connecting">Ready to connect</div>
     <div id="controls">
         <button id="connectBtn">Connect to Stream</button>
+        <button id="fullscreenBtn" disabled>Fullscreen</button>
     </div>
     <div id="info">Low-latency screen mirroring via WebRTC<br>
     Make sure WebRTC streaming is enabled in the WayMirror application</div>
@@ -289,6 +301,7 @@ class WebRTCServer:
         const video = document.getElementById('video');
         const status = document.getElementById('status');
         const connectBtn = document.getElementById('connectBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
         
         let client = null;
         
@@ -302,11 +315,50 @@ class WebRTCServer:
                 client.disconnect();
                 client = null;
                 connectBtn.textContent = 'Connect to Stream';
+                fullscreenBtn.disabled = true;
                 updateStatus('Disconnected', 'error');
             } else {
                 client = new WebRTCClient();
                 connectBtn.textContent = 'Disconnect';
                 connectBtn.disabled = true;
+            }
+        });
+        
+        fullscreenBtn.addEventListener('click', () => {
+            if (video.requestFullscreen) {
+                video.requestFullscreen();
+            } else if (video.mozRequestFullScreen) { // Firefox
+                video.mozRequestFullScreen();
+            } else if (video.webkitRequestFullscreen) { // Chrome, Safari and Opera
+                video.webkitRequestFullscreen();
+            } else if (video.msRequestFullscreen) { // IE/Edge
+                video.msRequestFullscreen();
+            }
+        });
+        
+        // Handle fullscreen change events
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement === video) {
+                fullscreenBtn.textContent = 'Exit Fullscreen';
+            } else {
+                fullscreenBtn.textContent = 'Fullscreen';
+            }
+        });
+        
+        // Handle other browser prefixes
+        document.addEventListener('webkitfullscreenchange', () => {
+            if (document.webkitFullscreenElement === video) {
+                fullscreenBtn.textContent = 'Exit Fullscreen';
+            } else {
+                fullscreenBtn.textContent = 'Fullscreen';
+            }
+        });
+        
+        document.addEventListener('mozfullscreenchange', () => {
+            if (document.mozFullScreenElement === video) {
+                fullscreenBtn.textContent = 'Exit Fullscreen';
+            } else {
+                fullscreenBtn.textContent = 'Fullscreen';
             }
         });
         
@@ -332,6 +384,7 @@ class WebRTCServer:
                             video.srcObject = event.streams[0];
                             updateStatus('Connected - Streaming', 'connected');
                             connectBtn.disabled = false;
+                            fullscreenBtn.disabled = false;
                         }
                     };
                     
@@ -350,9 +403,11 @@ class WebRTCServer:
                         if (this.pc.connectionState === 'failed') {
                             updateStatus('Connection failed', 'error');
                             connectBtn.disabled = false;
+                            fullscreenBtn.disabled = true;
                         } else if (this.pc.connectionState === 'disconnected') {
                             updateStatus('Disconnected', 'error');
                             connectBtn.disabled = false;
+                            fullscreenBtn.disabled = true;
                         }
                     };
                     
@@ -363,6 +418,7 @@ class WebRTCServer:
                     console.error('Error initializing WebRTC:', error);
                     updateStatus('Initialization failed', 'error');
                     connectBtn.disabled = false;
+                    fullscreenBtn.disabled = true;
                 }
             }
             
@@ -388,12 +444,14 @@ class WebRTCServer:
                     console.log('WebSocket disconnected');
                     updateStatus('WebSocket disconnected', 'error');
                     connectBtn.disabled = false;
+                    fullscreenBtn.disabled = true;
                 };
                 
                 this.ws.onerror = (error) => {
                     console.error('WebSocket error:', error);
                     updateStatus('Connection error - Make sure WebRTC streaming is enabled', 'error');
                     connectBtn.disabled = false;
+                    fullscreenBtn.disabled = true;
                 };
             }
             
@@ -437,6 +495,8 @@ class WebRTCServer:
                     this.pc.close();
                 }
                 video.srcObject = null;
+                fullscreenBtn.disabled = true;
+                fullscreenBtn.textContent = 'Fullscreen';
             }
         }
     </script>
