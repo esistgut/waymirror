@@ -35,6 +35,7 @@ class PortalHandler:
         
         self.session_handle: Optional[str] = None
         self.stream_node_id: Optional[int] = None
+        self.node_id: Optional[int] = None  # Store node_id for external access
         self._signal_matches: list = []  # Track signal handlers for cleanup
         self._start_called: bool = False  # Track if Start has been called to prevent duplicates
         
@@ -247,6 +248,7 @@ class PortalHandler:
             # Get the first stream
             stream = streams[0]
             self.stream_node_id = stream[0]  # PipeWire node ID
+            self.node_id = self.stream_node_id  # Store for external access
             
             logger.info(f"Stream ready! PipeWire node ID: {self.stream_node_id}")
             
@@ -270,6 +272,7 @@ class PortalHandler:
             # Reset state
             self.session_handle = None
             self.stream_node_id = None
+            self.node_id = None
             self._start_called = False
         except Exception as e:
             if self.on_error:

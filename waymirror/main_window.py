@@ -3,7 +3,7 @@ Main application window
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Any
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QPushButton, QLabel, QStatusBar, QMessageBox, QComboBox, QCheckBox, QSizePolicy)
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -15,6 +15,16 @@ from gi.repository import GLib
 from .portal import PortalHandler
 from .gstreamer_pipeline import GStreamerPipeline
 from .video_widget import VideoWidget
+
+# Try to import WebRTC server, handle gracefully if dependencies are missing
+try:
+    from .webrtc_server import WebRTCServer
+    WEBRTC_AVAILABLE = True
+except ImportError as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"WebRTC functionality not available: {e}")
+    WebRTCServer = None
+    WEBRTC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +57,15 @@ class MainWindow(QMainWindow):
         # Components
         self.portal_handler: Optional[PortalHandler] = None
         self.gstreamer_pipeline: Optional[GStreamerPipeline] = None
+        self.webrtc_server: Optional[Any] = None
         self.capture_thread: Optional[CaptureThread] = None
         self.is_capturing: bool = False
+        self.is_webrtc_streaming: bool = False
         
         # UI Components (will be initialized in setup_ui)
         self.start_button: QPushButton
         self.preview_checkbox: QCheckBox
+        self.webrtc_checkbox: QCheckBox
         self.aspect_ratio_combo: QComboBox
         self.video_widget: VideoWidget
         self.status_bar: QStatusBar
@@ -89,6 +102,16 @@ class MainWindow(QMainWindow):
         self.preview_checkbox.setChecked(True)  # Default to showing preview
         self.preview_checkbox.toggled.connect(self.on_preview_toggled)
         control_layout.addWidget(self.preview_checkbox)
+        
+        # WebRTC streaming checkbox
+        self.webrtc_checkbox = QCheckBox("WebRTC Streaming")
+        self.webrtc_checkbox.setChecked(False)
+        if WEBRTC_AVAILABLE:
+            self.webrtc_checkbox.toggled.connect(self.on_webrtc_toggled)
+        else:
+            self.webrtc_checkbox.setEnabled(False)
+            self.webrtc_checkbox.setToolTip("WebRTC streaming requires aiohttp and aiohttp-cors packages")
+        control_layout.addWidget(self.webrtc_checkbox)
         
         # Aspect ratio selector
         aspect_label = QLabel("Aspect Ratio:")
@@ -204,6 +227,42 @@ class MainWindow(QMainWindow):
             else:
                 self.gstreamer_pipeline.on_frame_ready = None
     
+    def on_webrtc_toggled(self, checked: bool) -> None:
+        """Handle WebRTC streaming checkbox toggle"""
+        if not WEBRTC_AVAILABLE:
+            self.webrtc_checkbox.setChecked(False)
+            self.show_error("WebRTC streaming requires aiohttp and aiohttp-cors packages.\nPlease install them with: pip install aiohttp aiohttp-cors")
+            return
+            
+        if checked and not self.is_capturing:
+            # WebRTC requires capture to be active
+            self.webrtc_checkbox.setChecked(False)
+            self.show_error("Please start capture first before enabling WebRTC streaming")
+            return
+        
+        if checked:
+            # Start WebRTC streaming
+            if self.portal_handler and hasattr(self.portal_handler, 'node_id') and self.portal_handler.node_id:
+                if self.start_webrtc_streaming(self.portal_handler.node_id):
+                    self.is_webrtc_streaming = True
+                    self.info_label.setText(self.info_label.text() + " | WebRTC: http://localhost:8000")
+                    logger.info("WebRTC streaming started")
+                else:
+                    self.webrtc_checkbox.setChecked(False)
+                    self.show_error("Failed to start WebRTC streaming")
+            else:
+                self.webrtc_checkbox.setChecked(False)
+                self.show_error("No active capture stream for WebRTC")
+        else:
+            # Stop WebRTC streaming
+            self.stop_webrtc_streaming()
+            self.is_webrtc_streaming = False
+            # Remove WebRTC info from label
+            current_text = self.info_label.text()
+            if " | WebRTC: http://localhost:8000" in current_text:
+                self.info_label.setText(current_text.replace(" | WebRTC: http://localhost:8000", ""))
+            logger.info("WebRTC streaming stopped")
+    
     def start_capture(self) -> None:
         """Start screen capture"""
         try:
@@ -237,6 +296,12 @@ class MainWindow(QMainWindow):
         """Stop screen capture"""
         try:
             self.status_bar.showMessage("Stopping capture...")
+            
+            # Stop WebRTC streaming first
+            if self.is_webrtc_streaming:
+                self.stop_webrtc_streaming()
+                self.webrtc_checkbox.setChecked(False)
+                self.is_webrtc_streaming = False
             
             # Stop GStreamer pipeline
             if self.gstreamer_pipeline:
@@ -329,6 +394,44 @@ class MainWindow(QMainWindow):
         self.show_error(f"GStreamer error: {error}")
         self.stop_capture()
     
+    def start_webrtc_streaming(self, node_id: int) -> bool:
+        """Start WebRTC streaming server"""
+        if not WEBRTC_AVAILABLE or not WebRTCServer:
+            logger.error("WebRTC server not available")
+            return False
+            
+        try:
+            if self.webrtc_server:
+                self.stop_webrtc_streaming()
+            
+            self.webrtc_server = WebRTCServer(port=8000)
+            
+            # Connect the WebRTC server to the existing GStreamer pipeline
+            if self.gstreamer_pipeline:
+                self.webrtc_server.set_gstreamer_pipeline(self.gstreamer_pipeline)
+            
+            success = self.webrtc_server.start_server()
+            if success:
+                logger.info("WebRTC server started successfully")
+                return True
+            else:
+                logger.error("Failed to start WebRTC server")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error starting WebRTC streaming: {e}")
+            return False
+    
+    def stop_webrtc_streaming(self) -> None:
+        """Stop WebRTC streaming server"""
+        try:
+            if self.webrtc_server:
+                self.webrtc_server.stop_server()
+                self.webrtc_server = None
+                logger.info("WebRTC server stopped")
+        except Exception as e:
+            logger.error(f"Error stopping WebRTC streaming: {e}")
+    
     def show_error(self, message: str) -> None:
         """Show error message"""
         QMessageBox.critical(self, "Error", message)
@@ -347,6 +450,9 @@ class MainWindow(QMainWindow):
         """Handle window close event"""
         if self.is_capturing:
             self.stop_capture()
+        
+        if self.is_webrtc_streaming:
+            self.stop_webrtc_streaming()
         
         if self.capture_thread:
             self.capture_thread.stop()

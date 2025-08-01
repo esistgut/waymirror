@@ -2,6 +2,9 @@ PyQt6
 PyGObject
 dbus-python
 numpy
+aiohttp
+aiohttp-cors
+python-socketio
 
 # Development dependencies
 mypy
